@@ -26,6 +26,7 @@ class BertCRFModel:
                  sequence_len=128,
                  bert_output_layer_num=1,
                  lstm_units=256,
+                 dense_units=256,
                  lr=0.001):
         self.bert_model_path = bert_model_path
         self.label2idx = label2idx
@@ -36,6 +37,7 @@ class BertCRFModel:
         self.sequence_len = sequence_len
         self.bert_output_layer_num = bert_output_layer_num
         self.lstm_units = lstm_units
+        self.dense_units = dense_units
         self.lr = lr
         self.model: keras.models.Model = None
 
@@ -54,7 +56,8 @@ class BertCRFModel:
     def __build_model(self):
         bert_model = self.__load_bert_model()
         self.token2idx = H.read_bert_vocab(self.bert_model_path)
-        dense_layer = TimeDistributed(Dense(128, activation=K.tanh, name='dense'))(bert_model.output)
+        dense_layer = TimeDistributed(Dense(self.dense_units, activation=K.tanh),
+                                      name='td_dense')(bert_model.output)
         crf_layer = CRF(units=len(self.label2idx), sparse_target=False, name='CRF')(dense_layer)
         model = keras.models.Model(inputs=bert_model.inputs, outputs=crf_layer)
         model.compile(optimizer=keras.optimizers.Adam(lr=self.lr),

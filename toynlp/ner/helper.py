@@ -35,6 +35,7 @@ def parse_label_seqs_to_dict(label_seqs):
         for label in label_seq:
             labels.add(label)
     label2idx = {PAD: 0}
+    labels = sorted(list(labels))
     for l in labels:
         label2idx[l] = len(label2idx)
     return label2idx

@@ -5,12 +5,14 @@ import sys
 import keras
 from seqeval.metrics import classification_report
 
-from ner.model import BertCRFModel
+sys.path.append('../../../')
+
+from toynlp.ner.model import BertCRFModel
 from toynlp.ner import helper
 
 # 参数配置
 parser = argparse.ArgumentParser()
-parser.add_argument('-seq_len', type=int, default=100)
+parser.add_argument('-seq_len', type=int, default=128)
 parser.add_argument('-bert_output_layer_num', type=int, default=4)
 parser.add_argument('-epochs', type=int, default=50)
 parser.add_argument('-batch_size', type=int, default=64)
