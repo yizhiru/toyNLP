@@ -6,8 +6,9 @@ from typing import Dict, List
 import keras
 import keras_bert
 import numpy as np
-from keras_contrib.layers import CRF
+from keras import backend as K
 from keras.layers import Dense
+from keras_contrib.layers import CRF
 from keras_contrib.losses import crf_losses
 from keras_contrib.metrics import crf_accuracies
 from keras_preprocessing import sequence
@@ -24,7 +25,7 @@ class BiLSTMCRFModel:
                  sequence_len=128,
                  embedding_dim=100,
                  lstm_units=256,
-                 dense_units=128,
+                 dense_units=256,
                  lr=0.001):
         self.token2idx = token2idx
         self.label2idx = label2idx
@@ -50,7 +51,9 @@ class BiLSTMCRFModel:
                                                                     recurrent_dropout=0.4,
                                                                     return_sequences=True),
                                                   name='Bi-LSTM')(embedding_layer)
-        dense_layer = keras.layers.TimeDistributed(Dense(units=self.dense_units))(bilstm_layer)
+        dense_layer = keras.layers.TimeDistributed(Dense(units=self.dense_units,
+                                                         activation=K.relu),
+                                                   name='td_dense')(bilstm_layer)
         crf_layer = CRF(units=len(self.label2idx), sparse_target=True, name='CRF')(dense_layer)
         model = keras.models.Model(inputs=input_layer, outputs=crf_layer)
         model.compile(optimizer=keras.optimizers.Adam(lr=self.lr),

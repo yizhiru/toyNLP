@@ -5,12 +5,14 @@ import sys
 import keras
 from seqeval.metrics import classification_report
 
-from ner.model import BiLSTMCRFModel
+sys.path.append('../../../')
+
+from toynlp.ner.model import BiLSTMCRFModel
 from toynlp.ner import helper
 
 # 参数配置
 parser = argparse.ArgumentParser()
-parser.add_argument('-seq_len', type=int, default=100)
+parser.add_argument('-seq_len', type=int, default=128)
 parser.add_argument('-epochs', type=int, default=50)
 parser.add_argument('-batch_size', type=int, default=64)
 parser.add_argument('-device_map', type=str, default='3')
@@ -48,8 +50,13 @@ model.fit(X_train,
           fit_kwargs={'callbacks': callbacks}
           )
 
-# save labels
+# save word dict and label dict
 model.save_dict(args.model_path)
+
+# load model
+model = BiLSTMCRFModel.load_model(os.path.join(args.model_path, 'ner.h5'),
+                                  dict_path=args.model_path,
+                                  sequence_len=args.seq_len)
 
 y_pred = model.predict(X_test, batch_size=args.batch_size)
 y_test = [sub[:min(args.seq_len, len(sub))] for sub in y_test]
