@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 from typing import Dict, List
@@ -7,55 +8,58 @@ import keras
 import keras_bert
 import numpy as np
 from keras import backend as K
-from keras.layers import Dense
+from keras.layers import TimeDistributed, Dense
+from keras_bert import bert
 from keras_contrib.layers import CRF
 from keras_contrib.losses import crf_losses
 from keras_contrib.metrics import crf_accuracies
 from keras_preprocessing import sequence
-from keras_self_attention import SeqSelfAttention
 
-import toynlp.ner.helper as H
+from toynlp import helper as H
 
 
-class BiLSTMCRFModel:
+class BertCRFModel:
 
     def __init__(self,
-                 token2idx: Dict = None,
+                 bert_model_path=None,
                  label2idx: Dict = None,
                  sequence_len=128,
-                 embedding_dim=100,
+                 bert_output_layer_num=1,
                  lstm_units=256,
                  dense_units=256,
                  lr=0.001):
-        self.token2idx = token2idx
+        self.bert_model_path = bert_model_path
         self.label2idx = label2idx
         if label2idx:
             self.idx2label = {v: k for k, v in label2idx.items()}
         else:
             self.idx2label = None
         self.sequence_len = sequence_len
-        self.embedding_dim = embedding_dim
+        self.bert_output_layer_num = bert_output_layer_num
         self.lstm_units = lstm_units
         self.dense_units = dense_units
         self.lr = lr
         self.model: keras.models.Model = None
 
+    def __load_bert_model(self):
+        config_path = os.path.join(self.bert_model_path, 'bert_config.json')
+        check_point_path = os.path.join(self.bert_model_path, 'bert_model.ckpt')
+        logging.info('loading bert model from {}\n'.format(self.bert_model_path))
+        bert_model = keras_bert.load_trained_model_from_checkpoint(config_path,
+                                                                   check_point_path,
+                                                                   seq_len=self.sequence_len,
+                                                                   output_layer_num=self.bert_output_layer_num,
+                                                                   training=False,
+                                                                   trainable=False)
+        return bert_model
+
     def __build_model(self):
-        input_layer = keras.layers.Input(shape=(None,))
-        embedding_layer = keras.layers.Embedding(input_dim=len(self.token2idx),
-                                                 output_dim=self.embedding_dim,
-                                                 mask_zero=True,
-                                                 trainable=True,
-                                                 name='Embedding')(input_layer)
-        bilstm_layer = keras.layers.Bidirectional(keras.layers.LSTM(units=self.lstm_units,
-                                                                    recurrent_dropout=0.4,
-                                                                    return_sequences=True),
-                                                  name='Bi-LSTM')(embedding_layer)
-        dense_layer = keras.layers.TimeDistributed(Dense(units=self.dense_units,
-                                                         activation=K.relu),
-                                                   name='td_dense')(bilstm_layer)
-        crf_layer = CRF(units=len(self.label2idx), sparse_target=True, name='CRF')(dense_layer)
-        model = keras.models.Model(inputs=input_layer, outputs=crf_layer)
+        bert_model = self.__load_bert_model()
+        self.token2idx = H.read_bert_vocab(self.bert_model_path)
+        dense_layer = TimeDistributed(Dense(self.dense_units, activation=K.tanh),
+                                      name='td_dense')(bert_model.output)
+        crf_layer = CRF(units=len(self.label2idx), sparse_target=False, name='CRF')(dense_layer)
+        model = keras.models.Model(inputs=bert_model.inputs, outputs=crf_layer)
         model.compile(optimizer=keras.optimizers.Adam(lr=self.lr),
                       loss=crf_losses.crf_loss,
                       metrics=[crf_accuracies.crf_accuracy])
@@ -63,30 +67,29 @@ class BiLSTMCRFModel:
         self.model = model
 
     def __tokenize(self, sentences: List[List[str]]) -> List[List[int]]:
-        """字符映射index"""
-
         def tokenize_sentence(sentence: List[str]) -> List[int]:
-            tokens = [self.token2idx.get(token, self.token2idx[H.UNK]) for token in sentence]
-            return tokens[:self.sequence_len]
+            tokens = [self.token2idx.get(token, self.token2idx[bert.TOKEN_UNK]) for token in sentence]
+            # truncate, CLS ... token .. SEP
+            tokens = tokens[:self.sequence_len - 2]
+            tokens = [self.token2idx[bert.TOKEN_CLS]] + tokens + [self.token2idx[bert.TOKEN_SEP]]
+            return tokens
 
         return [tokenize_sentence(sen) for sen in sentences]
 
     def __convert_label_seqs_to_idx(self, label_seqs: List[List[str]]) -> List[List[int]]:
-        """label映射index"""
-
         def convert_label_seq(label_seq: List[str]):
             idx_seq = [self.label2idx[l] for l in label_seq]
-            return idx_seq[:self.sequence_len]
+            idx_seq = idx_seq[:self.sequence_len - 2]
+            idx_seq = [self.label2idx[H.OTHER_LABEL]] + idx_seq + [self.label2idx[H.OTHER_LABEL]]
+            return idx_seq
 
         return [convert_label_seq(seq) for seq in label_seqs]
 
     def __convert_idx_seqs_to_label(self,
                                     idx_seqs: List[List[int]],
                                     raw_len_seqs: List[int]) -> List[List[str]]:
-        """index映射index"""
-
         def __convert_idx_seq_to_label(indices, raw_length):
-            indices = indices[: min(raw_length, self.sequence_len)]
+            indices = indices[1: min(raw_length, self.sequence_len - 2) + 1]
             return [self.idx2label[i] for i in indices]
 
         label_seqs = []
@@ -97,34 +100,34 @@ class BiLSTMCRFModel:
     def __data_generator(self,
                          x: List[List[str]],
                          y: List[List[str]],
-                         batch_size: int = 64):
+                         batch_size: int):
         while True:
-            page_list = list(range((len(x) // batch_size) + 1))
-            random.shuffle(page_list)
-            for page in page_list:
-                start_index = page * batch_size
-                end_index = start_index + batch_size
-                target_x = x[start_index: end_index]
-                target_y = y[start_index: end_index]
-                if len(target_x) == 0:
-                    target_x = x[0: batch_size]
-                    target_y = y[0: batch_size]
+            steps = (len(x) + batch_size - 1) // batch_size
+            # shuffle data
+            xy = list(zip(x, y))
+            random.shuffle(xy)
+            x, y = zip(*xy)
+            for i in range(steps):
+                batch_x = x[i * batch_size: (i + 1) * batch_size]
+                batch_y = y[i * batch_size: (i + 1) * batch_size]
 
-                tokenized_x = self.__tokenize(target_x)
-                idx_y = self.__convert_label_seqs_to_idx(target_y)
+                tokenized_x = self.__tokenize(batch_x)
+                idx_y = self.__convert_label_seqs_to_idx(batch_y)
 
-                padded_x = sequence.pad_sequences(tokenized_x,
-                                                  maxlen=self.sequence_len,
-                                                  padding='post',
-                                                  truncating='post',
-                                                  value=self.token2idx[H.PAD])
+                padded_x0 = sequence.pad_sequences(tokenized_x,
+                                                   maxlen=self.sequence_len,
+                                                   padding='post',
+                                                   truncating='post',
+                                                   value=self.token2idx[H.PAD])
+                padded_x1 = np.zeros(shape=padded_x0.shape)
                 padded_y = sequence.pad_sequences(idx_y,
                                                   maxlen=self.sequence_len,
                                                   padding='post',
                                                   truncating='post',
                                                   value=self.label2idx[H.PAD])
-                padded_y = np.reshape(padded_y, padded_y.shape + (1,))
-                yield (padded_x, padded_y)
+                one_hot_y = keras.utils.to_categorical(padded_y, num_classes=len(self.label2idx))
+
+                yield ([padded_x0, padded_x1], one_hot_y)
 
     def fit(self,
             X_train,
@@ -165,7 +168,10 @@ class BiLSTMCRFModel:
                                                padding='post',
                                                truncating='post',
                                                value=self.token2idx[H.PAD])
-        pred_prob_seqs = self.model.predict(padded_tokens, batch_size=batch_size)
+
+        x = [padded_tokens, np.zeros(shape=padded_tokens.shape)]
+
+        pred_prob_seqs = self.model.predict(x, batch_size=batch_size)
         idx_seqs = pred_prob_seqs.argmax(-1)
 
         return self.__convert_idx_seqs_to_label(idx_seqs, raw_len_seqs)
@@ -173,25 +179,21 @@ class BiLSTMCRFModel:
     @classmethod
     def get_custom_objects(cls):
         custom_objects = keras_bert.get_custom_objects()
-        custom_objects['SeqSelfAttention'] = SeqSelfAttention
         custom_objects['CRF'] = CRF
         custom_objects['crf_loss'] = crf_losses.crf_loss
         custom_objects['crf_accuracy'] = crf_accuracies.crf_accuracy
         return custom_objects
 
     def save_dict(self, dict_path):
-        with open(os.path.join(dict_path, 'vocab.json'), 'w', encoding='utf8') as fw:
-            fw.write(json.dumps(self.token2idx, indent=2, ensure_ascii=False))
         with open(os.path.join(dict_path, 'labels.json'), 'w', encoding='utf8') as fw:
             fw.write(json.dumps(self.label2idx, indent=2, ensure_ascii=False))
 
     @classmethod
-    def load_model(cls, model_path, dict_path, sequence_len):
+    def load_model(cls, model_path, bert_model_path, dict_path, sequence_len):
         agent = cls(sequence_len=sequence_len)
         agent.model = keras.models.load_model(model_path, custom_objects=cls.get_custom_objects())
         agent.model.summary()
-        with open(os.path.join(dict_path, 'vocab.json'), 'r', encoding='utf8') as fr:
-            agent.token2idx = json.load(fr)
+        agent.token2idx = H.read_bert_vocab(bert_model_path)
         with open(os.path.join(dict_path, 'labels.json'), 'r', encoding='utf8') as fr:
             agent.label2idx = json.load(fr)
         agent.idx2label = {v: k for k, v in agent.label2idx.items()}
