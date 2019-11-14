@@ -4,7 +4,6 @@ import random
 from typing import Dict, List
 
 import keras
-import keras_bert
 import numpy as np
 from keras import backend as K
 from keras.layers import Dense
@@ -12,17 +11,15 @@ from keras_contrib.layers import CRF
 from keras_contrib.losses import crf_losses
 from keras_contrib.metrics import crf_accuracies
 from keras_preprocessing import sequence
-from keras_self_attention import SeqSelfAttention
 
 import toynlp.helper as H
 
 
-class BiLSTMCRFModel:
+class BiLSTMCRF:
 
     def __init__(self,
                  token2idx: Dict = None,
                  label2idx: Dict = None,
-                 sequence_len=128,
                  embedding_dim=100,
                  lstm_units=256,
                  dense_units=256,
@@ -33,7 +30,6 @@ class BiLSTMCRFModel:
             self.idx2label = {v: k for k, v in label2idx.items()}
         else:
             self.idx2label = None
-        self.sequence_len = sequence_len
         self.embedding_dim = embedding_dim
         self.lstm_units = lstm_units
         self.dense_units = dense_units
@@ -64,39 +60,32 @@ class BiLSTMCRFModel:
 
     def __tokenize(self, sentences: List[List[str]]) -> List[List[int]]:
         """字符映射index"""
-
-        def tokenize_sentence(sentence: List[str]) -> List[int]:
-            tokens = [self.token2idx.get(token, self.token2idx[H.UNK]) for token in sentence]
-            return tokens[:self.sequence_len]
-
-        return [tokenize_sentence(sen) for sen in sentences]
+        return [[self.token2idx.get(token, self.token2idx[H.UNK]) for token in sentence]
+                for sentence in sentences]
 
     def __convert_label_seqs_to_idx(self, label_seqs: List[List[str]]) -> List[List[int]]:
         """label映射index"""
-
-        def convert_label_seq(label_seq: List[str]):
-            idx_seq = [self.label2idx[l] for l in label_seq]
-            return idx_seq[:self.sequence_len]
-
-        return [convert_label_seq(seq) for seq in label_seqs]
+        return [[self.label2idx[l] for l in label_seq]
+                for label_seq in label_seqs]
 
     def __convert_idx_seqs_to_label(self,
                                     idx_seqs: List[List[int]],
-                                    raw_len_seqs: List[int]) -> List[List[str]]:
-        """index映射index"""
+                                    raw_lens: List[int]) -> List[List[str]]:
+        """index映射类别"""
 
         def __convert_idx_seq_to_label(indices, raw_length):
-            indices = indices[: min(raw_length, self.sequence_len)]
+            indices = indices[: raw_length]
             return [self.idx2label[i] for i in indices]
 
         label_seqs = []
-        for idx_seq, raw_len in zip(idx_seqs, raw_len_seqs):
+        for idx_seq, raw_len in zip(idx_seqs, raw_lens):
             label_seqs.append(__convert_idx_seq_to_label(idx_seq, raw_len))
         return label_seqs
 
     def __data_generator(self,
                          x: List[List[str]],
                          y: List[List[str]],
+                         sequence_len: int,
                          batch_size: int):
         while True:
             steps = (len(x) + batch_size - 1) // batch_size
@@ -112,12 +101,12 @@ class BiLSTMCRFModel:
                 idx_y = self.__convert_label_seqs_to_idx(batch_y)
 
                 padded_x = sequence.pad_sequences(tokenized_x,
-                                                  maxlen=self.sequence_len,
+                                                  maxlen=sequence_len,
                                                   padding='post',
                                                   truncating='post',
                                                   value=self.token2idx[H.PAD])
                 padded_y = sequence.pad_sequences(idx_y,
-                                                  maxlen=self.sequence_len,
+                                                  maxlen=sequence_len,
                                                   padding='post',
                                                   truncating='post',
                                                   value=self.label2idx[H.PAD])
@@ -134,22 +123,24 @@ class BiLSTMCRFModel:
             fit_kwargs: Dict = None):
         if self.model is None:
             self.__build_model()
+        # 最长序列长度
+        max_seq_len = max([len(x) for x in X_train + X_val])
 
         if len(X_train) < batch_size:
             batch_size = len(X_train) // 2
 
-        train_generator = self.__data_generator(X_train, y_train, batch_size)
+        train_generator = self.__data_generator(X_train, y_train, max_seq_len, batch_size)
 
         if fit_kwargs is None:
             fit_kwargs = {}
 
         if X_val:
-            val_generator = self.__data_generator(X_val, y_val, batch_size)
+            val_generator = self.__data_generator(X_val, y_val, max_seq_len, batch_size)
             fit_kwargs['validation_data'] = val_generator
-            fit_kwargs['validation_steps'] = len(X_val) // batch_size
+            fit_kwargs['validation_steps'] = (len(X_val) + batch_size - 1) // batch_size
 
         self.model.fit_generator(train_generator,
-                                 steps_per_epoch=len(X_train) // batch_size,
+                                 steps_per_epoch=(len(X_train) + batch_size - 1) // batch_size,
                                  epochs=epochs,
                                  **fit_kwargs)
 
@@ -158,8 +149,9 @@ class BiLSTMCRFModel:
                 batch_size=64) -> List[List[str]]:
         tokens = self.__tokenize(sentences)
         raw_len_seqs = [len(sentence) for sentence in sentences]
+        max_seq_len = max([len(x) for x in sentences])
         padded_tokens = sequence.pad_sequences(tokens,
-                                               maxlen=self.sequence_len,
+                                               maxlen=max_seq_len,
                                                padding='post',
                                                truncating='post',
                                                value=self.token2idx[H.PAD])
@@ -170,27 +162,24 @@ class BiLSTMCRFModel:
 
     @classmethod
     def get_custom_objects(cls):
-        custom_objects = keras_bert.get_custom_objects()
-        custom_objects['SeqSelfAttention'] = SeqSelfAttention
-        custom_objects['CRF'] = CRF
-        custom_objects['crf_loss'] = crf_losses.crf_loss
-        custom_objects['crf_accuracy'] = crf_accuracies.crf_accuracy
-        return custom_objects
+        return {'CRF': CRF,
+                'crf_loss': crf_losses.crf_loss,
+                'crf_accuracy': crf_accuracies.crf_accuracy}
 
-    def save_dict(self, dict_path):
-        with open(os.path.join(dict_path, 'vocab.json'), 'w', encoding='utf8') as fw:
+    def save_dict(self, dict_root_path):
+        with open(os.path.join(dict_root_path, 'vocab.json'), 'w', encoding='utf8') as fw:
             fw.write(json.dumps(self.token2idx, indent=2, ensure_ascii=False))
-        with open(os.path.join(dict_path, 'labels.json'), 'w', encoding='utf8') as fw:
+        with open(os.path.join(dict_root_path, 'labels.json'), 'w', encoding='utf8') as fw:
             fw.write(json.dumps(self.label2idx, indent=2, ensure_ascii=False))
 
     @classmethod
-    def load_model(cls, model_path, dict_path, sequence_len):
-        agent = cls(sequence_len=sequence_len)
+    def load_model(cls, model_path, dict_root_path):
+        agent = cls()
         agent.model = keras.models.load_model(model_path, custom_objects=cls.get_custom_objects())
         agent.model.summary()
-        with open(os.path.join(dict_path, 'vocab.json'), 'r', encoding='utf8') as fr:
+        with open(os.path.join(dict_root_path, 'vocab.json'), 'r', encoding='utf8') as fr:
             agent.token2idx = json.load(fr)
-        with open(os.path.join(dict_path, 'labels.json'), 'r', encoding='utf8') as fr:
+        with open(os.path.join(dict_root_path, 'labels.json'), 'r', encoding='utf8') as fr:
             agent.label2idx = json.load(fr)
         agent.idx2label = {v: k for k, v in agent.label2idx.items()}
         return agent

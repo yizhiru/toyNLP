@@ -3,11 +3,12 @@
 
 ## 介绍
 
-toyNLP是工作之余的toy项目，实现部分最新NLP算法，仅做参考。算法实现：
+toyNLP是工作之余的NLP项目，仅做参考，实现算法：
 
-1. NER 命名实体识别
-    - BI-LSTM+CRF
-    - Bert+CRF
+一、 NER 命名实体识别
+    - Bi-LSTM + CRF
+    - BERT + CRF 
+    - ALBERT + CRF
 
 
 ## 参考文献

@@ -18,14 +18,13 @@ from keras_preprocessing import sequence
 from toynlp import helper as H
 
 
-class BertCRFModel:
+class BertCRF:
 
     def __init__(self,
                  bert_model_path=None,
                  label2idx: Dict = None,
                  sequence_len=128,
                  bert_output_layer_num=1,
-                 lstm_units=256,
                  dense_units=256,
                  lr=0.001):
         self.bert_model_path = bert_model_path
@@ -36,7 +35,6 @@ class BertCRFModel:
             self.idx2label = None
         self.sequence_len = sequence_len
         self.bert_output_layer_num = bert_output_layer_num
-        self.lstm_units = lstm_units
         self.dense_units = dense_units
         self.lr = lr
         self.model: keras.models.Model = None
@@ -45,17 +43,17 @@ class BertCRFModel:
         config_path = os.path.join(self.bert_model_path, 'bert_config.json')
         check_point_path = os.path.join(self.bert_model_path, 'bert_model.ckpt')
         logging.info('loading bert model from {}\n'.format(self.bert_model_path))
-        bert_model = keras_bert.load_trained_model_from_checkpoint(config_path,
-                                                                   check_point_path,
-                                                                   seq_len=self.sequence_len,
-                                                                   output_layer_num=self.bert_output_layer_num,
-                                                                   training=False,
-                                                                   trainable=False)
-        return bert_model
+        return keras_bert.load_trained_model_from_checkpoint(config_path,
+                                                             check_point_path,
+                                                             seq_len=self.sequence_len,
+                                                             output_layer_num=self.bert_output_layer_num,
+                                                             training=False,
+                                                             trainable=False)
 
-    def __build_model(self):
-        bert_model = self.__load_bert_model()
+    def _build_model(self):
         self.token2idx = H.read_bert_vocab(self.bert_model_path)
+        bert_model = self.__load_bert_model()
+        bert_model.summary()
         dense_layer = TimeDistributed(Dense(self.dense_units, activation=K.tanh),
                                       name='td_dense')(bert_model.output)
         crf_layer = CRF(units=len(self.label2idx), sparse_target=False, name='CRF')(dense_layer)
@@ -68,6 +66,7 @@ class BertCRFModel:
 
     def __tokenize(self, sentences: List[List[str]]) -> List[List[int]]:
         def tokenize_sentence(sentence: List[str]) -> List[int]:
+            """根据词典分词"""
             tokens = [self.token2idx.get(token, self.token2idx[bert.TOKEN_UNK]) for token in sentence]
             # truncate, CLS ... token .. SEP
             tokens = tokens[:self.sequence_len - 2]
@@ -138,7 +137,7 @@ class BertCRFModel:
             epochs=10,
             fit_kwargs: Dict = None):
         if self.model is None:
-            self.__build_model()
+            self._build_model()
 
         if len(X_train) < batch_size:
             batch_size = len(X_train) // 2
@@ -151,10 +150,10 @@ class BertCRFModel:
         if X_val:
             val_generator = self.__data_generator(X_val, y_val, batch_size)
             fit_kwargs['validation_data'] = val_generator
-            fit_kwargs['validation_steps'] = len(X_val) // batch_size
+            fit_kwargs['validation_steps'] = (len(X_val) + batch_size - 1) // batch_size
 
         self.model.fit_generator(train_generator,
-                                 steps_per_epoch=len(X_train) // batch_size,
+                                 steps_per_epoch=(len(X_train) + batch_size - 1) // batch_size,
                                  epochs=epochs,
                                  **fit_kwargs)
 
