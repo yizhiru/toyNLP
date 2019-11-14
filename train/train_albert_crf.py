@@ -7,18 +7,17 @@ from seqeval.metrics import classification_report
 
 sys.path.append('../')
 
-from toynlp.ner import BertCRF
+from toynlp.ner import AlbertCRF
 from toynlp import helper
 from toynlp import utils
 
 # 参数配置
 parser = argparse.ArgumentParser()
 parser.add_argument('-seq_len', type=int, default=128)
-parser.add_argument('-bert_output_layer_num', type=int, default=1)
 parser.add_argument('-epochs', type=int, default=50)
 parser.add_argument('-batch_size', type=int, default=64)
 parser.add_argument('-device_map', type=str, default='3')
-parser.add_argument('-bert_model_path', type=str, default='chinese_L-12_H-768_A-12')
+parser.add_argument('-albert_model_path', type=str, default='albert_tiny_489k')
 parser.add_argument('-output_path', type=str, default='ner_model')
 args = parser.parse_args()
 param_str = '\n'.join(['%20s = %s' % (k, v) for k, v in sorted(vars(args).items())])
@@ -34,10 +33,9 @@ X_val, y_val = helper.load_sequence_pair_data(os.path.join(root_path, 'dev.txt')
 utils.mkdir(args.output_path)
 
 label2idx = helper.parse_label_seqs_to_dict(y_train)
-model = BertCRF(args.bert_model_path,
-                label2idx,
-                sequence_len=args.seq_len,
-                bert_output_layer_num=args.bert_output_layer_num)
+model = AlbertCRF(args.albert_model_path,
+                  label2idx,
+                  sequence_len=args.seq_len)
 
 callbacks = [
     keras.callbacks.EarlyStopping(monitor='val_crf_accuracy', patience=8),
