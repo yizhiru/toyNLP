@@ -6,9 +6,10 @@
 toyNLP是工作之余的NLP项目，仅做参考，实现算法：
 
 一、 NER 命名实体识别
-    - Bi-LSTM + CRF
-    - BERT + CRF 
-    - ALBERT + CRF
+
+- Bi-LSTM + CRF
+- BERT + CRF 
+- ALBERT + CRF
 
 
 ## 参考文献
