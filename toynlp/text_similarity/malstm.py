@@ -1,21 +1,13 @@
-import keras
-import keras.backend as K
-from keras import layers
-import random
-from typing import Dict, List
-import json
-import logging
-import os
 import random
 from typing import Dict, List
 
 import keras
-import keras_bert
 import numpy as np
 from keras import backend as K
+from keras import layers
+from keras_preprocessing import sequence
 
 import toynlp.helper as H
-from keras_preprocessing import sequence
 
 
 class MaLSTM:
@@ -100,7 +92,6 @@ class MaLSTM:
                                                    padding='post',
                                                    truncating='post',
                                                    value=self.token2idx[H.PAD])
-
 
                 padded_x_right = np.zeros(shape=padded_x.shape)
                 x_input_data = [padded_x, padded_x_right]

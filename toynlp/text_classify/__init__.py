@@ -1,0 +1,1 @@
+from toynlp.text_classify.char_bigram_svm import CharBigramSVMClassifier
