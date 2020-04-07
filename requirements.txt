@@ -3,3 +3,8 @@ numpy
 pip install git+https://www.github.com/keras-team/keras-contrib.git
 seqeval
 pip install git+https://github.com/TinkerMob/keras_albert_model.git
+sklearn
+pystemmer
+zhon
+zhconv
+
