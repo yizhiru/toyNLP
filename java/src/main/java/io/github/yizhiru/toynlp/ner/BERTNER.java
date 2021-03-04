@@ -18,35 +18,49 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class ProductNER {
 
+/**
+ * BERT NER模型，提取实体词
+ */
+public class BERTNER {
+
+    // 序列标注类别对应编码值
     private Map<String, Integer> label2idx;
 
+    // 编码值对应序列标注类别
     private Map<Integer, String> idx2Label;
 
+    // BERT模型词典token 对应编码值
     private Map<String, Float> token2idx;
 
     private Session session;
 
+    // BERT 模型的PAD 标识
     private final String PAD = "[PAD]";
 
+    // BERT 模型的UNK 标识
     private final String UNK = "[UNK]";
 
+    // BERT 模型的CLS 标识
     private final String CLS = "[CLS]";
 
+    // BERT 模型的SEP 标识
     private final String SEP = "[SEP]";
 
 
     private final int SEQUENCE_LENGTH = 100;
 
-    private ProductNER(Map<String, Integer> label2idx, Map<String, Float> token2idx, Session session) {
+    private BERTNER(Map<String, Integer> label2idx, Map<String, Float> token2idx, Session session) {
         this.label2idx = label2idx;
         this.idx2Label = MapUtils.invertMap(label2idx);
         this.token2idx = token2idx;
         this.session = session;
     }
 
-    public static ProductNER load(String path) throws IOException {
+    /**
+     * 加载BERT NER模型
+     */
+    public static BERTNER load(String path) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         Map<String, Integer> label2idx = mapper.readValue(new FileInputStream(path + "/labels.json"),
                 new TypeReference<Map<String, Integer>>() {
@@ -59,9 +73,18 @@ public class ProductNER {
         Graph graph = new Graph();
         graph.importGraphDef(pbBytes);
         Session session = new Session(graph);
-        return new ProductNER(label2idx, token2idx, session);
+        return new BERTNER(label2idx, token2idx, session);
     }
 
+    /**
+     * 解析句子为BERT token对应编码值。
+     * 将句子分解为字符，作为BERT输入token，查找编码值。
+     * <p>
+     * TODO: BERT token并非单一字符，也有由多个字符组成，官方tokenize为前缀最长匹配，后期待优化。
+     *
+     * @param textChars 输入句子
+     * @return 解析后token编码值数组
+     */
     private float[] tokenize(char[] textChars) {
         int length = Math.min(SEQUENCE_LENGTH, textChars.length + 2);
         float[] ids = new float[length];
@@ -76,7 +99,9 @@ public class ProductNER {
         return ids;
     }
 
-
+    /**
+     * 预测单个句子中的实体词
+     */
     public Set<String> predict(String text) {
         String lowerText = text.toLowerCase();
         char[] textChars = lowerText.toCharArray();
@@ -107,6 +132,13 @@ public class ProductNER {
         }
     }
 
+    /**
+     * Batch 预测句子实体词
+     *
+     * @param sentences 所有句子
+     * @param batchSize 用于预测的batch size
+     * @return 句子中所有实体词
+     */
     public List<Set<String>> predictOnBatch(List<String> sentences, int batchSize) {
         int sentencesSize = sentences.size();
         int n = Math.floorDiv(sentencesSize, batchSize);
@@ -159,6 +191,13 @@ public class ProductNER {
         return entitiesSeq;
     }
 
+    /**
+     * 模型输出的序列标注类别映射为标签。
+     *
+     * @param labelIds        模型输出的序列标注类别，为编码值数组
+     * @param effectiveLength 序列有效长度，用于剔除padding 类别
+     * @return 句子每个token 对应的标签
+     */
     private List<String> convertToLabels(int[] labelIds, int effectiveLength) {
         List<String> labels = new ArrayList<>(labelIds.length);
         for (int i = 1; i <= effectiveLength; i++) {
