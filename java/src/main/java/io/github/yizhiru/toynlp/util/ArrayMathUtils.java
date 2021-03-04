@@ -16,7 +16,10 @@ public final class ArrayMathUtils {
         }
         return argmax;
     }
-    
+
+    /**
+     * @return the index of the max value; if max is a tie, returns the first one.
+     */
     public static int[][] argmax(float[][][] a) {
         int len1 = a.length;
         int len2 = a[0].length;
