@@ -20,6 +20,7 @@ class BiLSTMCRF:
     def __init__(self,
                  token2idx: Dict = None,
                  label2idx: Dict = None,
+                 max_seq_len=100,
                  embedding_dim=100,
                  lstm_units=256,
                  dense_units=256,
@@ -30,6 +31,7 @@ class BiLSTMCRF:
             self.idx2label = {v: k for k, v in label2idx.items()}
         else:
             self.idx2label = None
+        self.max_seq_len = max_seq_len
         self.embedding_dim = embedding_dim
         self.lstm_units = lstm_units
         self.dense_units = dense_units
@@ -85,7 +87,6 @@ class BiLSTMCRF:
     def __data_generator(self,
                          x: List[List[str]],
                          y: List[List[str]],
-                         sequence_len: int,
                          batch_size: int):
         while True:
             steps = (len(x) + batch_size - 1) // batch_size
@@ -101,12 +102,12 @@ class BiLSTMCRF:
                 idx_y = self.__convert_label_seqs_to_idx(batch_y)
 
                 padded_x = sequence.pad_sequences(tokenized_x,
-                                                  maxlen=sequence_len,
+                                                  maxlen=self.max_seq_len,
                                                   padding='post',
                                                   truncating='post',
                                                   value=self.token2idx[H.PAD])
                 padded_y = sequence.pad_sequences(idx_y,
-                                                  maxlen=sequence_len,
+                                                  maxlen=self.max_seq_len,
                                                   padding='post',
                                                   truncating='post',
                                                   value=self.label2idx[H.PAD])
@@ -123,19 +124,17 @@ class BiLSTMCRF:
             fit_kwargs: Dict = None):
         if self.model is None:
             self.__build_model()
-        # 最长序列长度
-        max_seq_len = max([len(x) for x in X_train + X_val])
 
         if len(X_train) < batch_size:
             batch_size = len(X_train) // 2
 
-        train_generator = self.__data_generator(X_train, y_train, max_seq_len, batch_size)
+        train_generator = self.__data_generator(X_train, y_train, batch_size)
 
         if fit_kwargs is None:
             fit_kwargs = {}
 
         if X_val:
-            val_generator = self.__data_generator(X_val, y_val, max_seq_len, batch_size)
+            val_generator = self.__data_generator(X_val, y_val, batch_size)
             fit_kwargs['validation_data'] = val_generator
             fit_kwargs['validation_steps'] = (len(X_val) + batch_size - 1) // batch_size
 
@@ -149,9 +148,8 @@ class BiLSTMCRF:
                 batch_size=64) -> List[List[str]]:
         tokens = self.__tokenize(sentences)
         raw_len_seqs = [len(sentence) for sentence in sentences]
-        max_seq_len = max([len(x) for x in sentences])
         padded_tokens = sequence.pad_sequences(tokens,
-                                               maxlen=max_seq_len,
+                                               maxlen=self.max_seq_len,
                                                padding='post',
                                                truncating='post',
                                                value=self.token2idx[H.PAD])
