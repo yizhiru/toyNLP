@@ -7,4 +7,5 @@ sklearn
 pystemmer
 zhon
 zhconv
+keras-crf
 
