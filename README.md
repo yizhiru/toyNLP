@@ -19,6 +19,9 @@ toyNLP是工作之余的NLP项目，仅做参考，实现算法：
 
 - MaLSTM
 
+四、NLP基础组件
+- 双数组Trie树（Double Array Trie）
+
 
 ## 参考文献
 
