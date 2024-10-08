@@ -18,7 +18,7 @@
 
         <jackson.version>2.13.4.2</jackson.version>
         <tensorflow.version>1.12.0</tensorflow.version>
-        <commonsIO.version>2.7</commonsIO.version>
+        <commonsIO.version>2.14.0</commonsIO.version>
         <commonsCollections.version>3.2.2</commonsCollections.version>
     </properties>
 
