@@ -1,6 +1,5 @@
 import os
 from collections import defaultdict
-import codecs
 
 PAD = "[PAD]"
 UNK = "[UNK]"
@@ -11,10 +10,9 @@ OTHER_LABEL = 'O'
 def load_sequence_pair_data(file_path, sep=' '):
     """加载字符-类别对数据"""
     char_seqs, label_seqs = [[]], [[]]
-    with codecs.open(file_path, 'r', 'utf8') as reader:
+    with open(file_path, 'r', encoding='utf-8') as reader:
         for line in reader:
             line = line.strip()
-            # empty string
             if not line:
                 if not char_seqs or len(char_seqs[-1]) > 0:
                     char_seqs.append([])
@@ -32,14 +30,10 @@ def load_sequence_pair_data(file_path, sep=' '):
 
 def parse_label_seqs_to_dict(label_seqs):
     """解析标注序列，得到类别词典"""
-    labels = set()
-    for label_seq in label_seqs:
-        for label in label_seq:
-            labels.add(label)
+    labels = sorted({label for seq in label_seqs for label in seq})
     label2idx = {PAD: 0}
-    labels = sorted(list(labels))
-    for l in labels:
-        label2idx[l] = len(label2idx)
+    for label in labels:
+        label2idx[label] = len(label2idx)
     return label2idx
 
 

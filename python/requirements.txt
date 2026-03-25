@@ -1,0 +1,9 @@
+keras
+numpy
+seqeval
+scikit-learn
+zhon
+zhconv
+keras-crf
+git+https://www.github.com/keras-team/keras-contrib.git
+git+https://github.com/TinkerMob/keras_albert_model.git
