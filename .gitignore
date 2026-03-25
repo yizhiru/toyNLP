@@ -108,3 +108,4 @@ venv.bak/
 
 ner_model
 data/classify
+*.classpath.txt
